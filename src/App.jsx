@@ -5,17 +5,18 @@ import { supabase } from './supabaseClient'
 function App() {
   const [pagina, setPagina] = useState('inicio')
 
-  // =============================
+  // =====================================
   // DADOS PÚBLICOS
-  // =============================
+  // =====================================
 
   const [barbeiros, setBarbeiros] = useState([])
   const [servicos, setServicos] = useState([])
   const [carregando, setCarregando] = useState(true)
+  const [carregandoServicos, setCarregandoServicos] = useState(false)
 
-  // =============================
+  // =====================================
   // AGENDAMENTO DO CLIENTE
-  // =============================
+  // =====================================
 
   const [barbeiroSelecionado, setBarbeiroSelecionado] = useState(null)
   const [servicoSelecionado, setServicoSelecionado] = useState(null)
@@ -28,25 +29,25 @@ function App() {
   const [mensagem, setMensagem] = useState('')
   const [salvando, setSalvando] = useState(false)
 
-  // =============================
+  // =====================================
   // LOGIN
-  // =============================
+  // =====================================
 
   const [emailLogin, setEmailLogin] = useState('')
   const [senhaLogin, setSenhaLogin] = useState('')
   const [erroLogin, setErroLogin] = useState('')
   const [entrando, setEntrando] = useState(false)
 
-  // =============================
+  // =====================================
   // BARBEIRO LOGADO
-  // =============================
+  // =====================================
 
   const [barbeiroLogado, setBarbeiroLogado] = useState(null)
   const [emailAtual, setEmailAtual] = useState('')
 
-  // =============================
-  // AGENDAMENTOS DO BARBEIRO
-  // =============================
+  // =====================================
+  // AGENDAMENTOS
+  // =====================================
 
   const [agendamentos, setAgendamentos] = useState([])
   const [carregandoAgendamentos, setCarregandoAgendamentos] =
@@ -54,17 +55,18 @@ function App() {
 
   const [mensagemPainel, setMensagemPainel] = useState('')
 
-  // =============================
-  // CONFIGURAÇÕES DA CONTA
-  // =============================
+  // =====================================
+  // CONTA
+  // =====================================
 
   const [novoEmail, setNovoEmail] = useState('')
+  const [emailPendente, setEmailPendente] = useState('')
   const [novaSenha, setNovaSenha] = useState('')
   const [mensagemConta, setMensagemConta] = useState('')
 
-  // =============================
-  // GERENCIAR SERVIÇOS
-  // =============================
+  // =====================================
+  // SERVIÇOS ADMIN
+  // =====================================
 
   const [servicosAdmin, setServicosAdmin] = useState([])
   const [edicoesServicos, setEdicoesServicos] = useState({})
@@ -75,9 +77,9 @@ function App() {
 
   const [mensagemServicos, setMensagemServicos] = useState('')
 
-  // =============================
+  // =====================================
   // BLOQUEIOS
-  // =============================
+  // =====================================
 
   const [bloqueios, setBloqueios] = useState([])
   const [dataBloqueio, setDataBloqueio] = useState('')
@@ -86,57 +88,95 @@ function App() {
   const [horariosBloqueio, setHorariosBloqueio] = useState([])
   const [mensagemBloqueio, setMensagemBloqueio] = useState('')
 
-  // =============================
-  // CARREGAR DADOS PÚBLICOS
-  // =============================
+  // =====================================
+  // CARREGAR BARBEIROS
+  // =====================================
 
-  async function carregarDadosPublicos() {
+  async function carregarBarbeiros() {
     setCarregando(true)
 
-    const { data: dadosBarbeiros } = await supabase
+    const { data, error } = await supabase
       .from('barbeiros')
       .select('id, nome, ativo')
       .eq('ativo', true)
       .order('id')
 
-    const { data: dadosServicos } = await supabase
-      .from('servicos')
-      .select('id, nome, preco, duracao_minutos, ativo')
-      .eq('ativo', true)
-      .order('id')
-
-    setBarbeiros(dadosBarbeiros || [])
-    setServicos(dadosServicos || [])
+    if (error) {
+      console.log('Erro barbeiros:', error)
+      setBarbeiros([])
+    } else {
+      setBarbeiros(data || [])
+    }
 
     setCarregando(false)
   }
 
-  // =============================
-  // INICIAR
-  // =============================
+  // =====================================
+  // SERVIÇOS DO BARBEIRO ESCOLHIDO
+  // =====================================
+
+  async function carregarServicosCliente(barbeiroId) {
+    if (!barbeiroId) {
+      setServicos([])
+      return
+    }
+
+    setCarregandoServicos(true)
+
+    const { data, error } = await supabase
+      .from('servicos')
+      .select(
+        'id, nome, preco, duracao_minutos, ativo, barbeiro_id'
+      )
+      .eq('barbeiro_id', barbeiroId)
+      .eq('ativo', true)
+      .order('id')
+
+    if (error) {
+      console.log('Erro serviços:', error)
+      setServicos([])
+    } else {
+      setServicos(data || [])
+    }
+
+    setCarregandoServicos(false)
+  }
+
+  // O filtro .eq() pode ser usado em consultas e atualizações
+  // para limitar os registros ao barbeiro correto.
+
+  useEffect(() => {
+    if (!barbeiroSelecionado) {
+      setServicos([])
+      return
+    }
+
+    carregarServicosCliente(barbeiroSelecionado.id)
+  }, [barbeiroSelecionado])
+
+  // =====================================
+  // INICIALIZAÇÃO
+  // =====================================
 
   useEffect(() => {
     async function iniciar() {
-      await carregarDadosPublicos()
+      await carregarBarbeiros()
 
-      // Segurança: ao abrir ou atualizar o site, nunca entrar
-      // automaticamente no painel do barbeiro.
-      // Se existir uma sessão antiga salva no navegador, encerramos
-      // para exigir e-mail e senha novamente.
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
-      if (session) {
-        await supabase.auth.signOut()
-      }
+      if (session?.user) {
+        setEmailAtual(session.user.email || '')
 
-      setBarbeiroLogado(null)
-      setAgendamentos([])
-      setEmailAtual('')
-      setEmailLogin('')
-      setSenhaLogin('')
-      setPagina('inicio')
+        const perfil = await carregarPerfilBarbeiro(
+          session.user.id
+        )
+
+        if (perfil) {
+          setPagina('painel')
+        }
+      }
     }
 
     iniciar()
@@ -148,11 +188,24 @@ function App() {
         setBarbeiroLogado(null)
         setAgendamentos([])
         setEmailAtual('')
+        setEmailPendente('')
         setPagina('inicio')
       }
 
-      if (event === 'SIGNED_IN' && session?.user?.email) {
+      if (session?.user?.email) {
         setEmailAtual(session.user.email)
+
+        setEmailPendente((pendente) => {
+          if (
+            pendente &&
+            session.user.email.toLowerCase() ===
+              pendente.toLowerCase()
+          ) {
+            return ''
+          }
+
+          return pendente
+        })
       }
     })
 
@@ -161,9 +214,9 @@ function App() {
     }
   }, [])
 
-  // =============================
+  // =====================================
   // DATAS
-  // =============================
+  // =====================================
 
   function formatarDataBanco(data) {
     const ano = data.getFullYear()
@@ -186,6 +239,7 @@ function App() {
 
       data.setDate(hoje.getDate() + i)
 
+      // 0 = domingo
       if (data.getDay() !== 0) {
         dias.push({
           valor: formatarDataBanco(data),
@@ -210,9 +264,9 @@ function App() {
     return dias
   }
 
-  // =============================
+  // =====================================
   // HORÁRIOS
-  // =============================
+  // =====================================
 
   function gerarHorarios(inicio, fim, duracao) {
     const [horaInicio, minutoInicio] = inicio
@@ -256,23 +310,23 @@ function App() {
   }
 
   function horariosSeSobrepoem(
-    inicioAgendamento,
-    duracaoAgendamento,
-    inicioBloqueio,
-    duracaoBloqueio = 45
+    inicioA,
+    duracaoA,
+    inicioB,
+    duracaoB
   ) {
-    const inicioA = horarioParaMinutos(inicioAgendamento)
-    const fimA = inicioA + duracaoAgendamento
+    const comecoA = horarioParaMinutos(inicioA)
+    const fimA = comecoA + duracaoA
 
-    const inicioB = horarioParaMinutos(inicioBloqueio)
-    const fimB = inicioB + duracaoBloqueio
+    const comecoB = horarioParaMinutos(inicioB)
+    const fimB = comecoB + duracaoB
 
-    return inicioA < fimB && fimA > inicioB
+    return comecoA < fimB && fimA > comecoB
   }
 
-  // =============================
-  // HORÁRIOS DO CLIENTE
-  // =============================
+  // =====================================
+  // HORÁRIOS DISPONÍVEIS DO CLIENTE
+  // =====================================
 
   useEffect(() => {
     async function carregarHorariosCliente() {
@@ -307,18 +361,40 @@ function App() {
         return
       }
 
-      const { data: ocupadosBanco } = await supabase
+      const {
+        data: ocupadosBanco,
+        error: erroOcupados,
+      } = await supabase
         .from('agendamentos')
-        .select('horario, status')
+        .select(`
+          horario,
+          status,
+          servico:servicos(
+            duracao_minutos
+          )
+        `)
         .eq('barbeiro_id', barbeiroSelecionado.id)
         .eq('data', dataSelecionada)
         .neq('status', 'cancelado')
 
-      const { data: bloqueiosBanco } = await supabase
+      if (erroOcupados) {
+        console.log('Erro horários ocupados:', erroOcupados)
+        setHorariosDisponiveis([])
+        return
+      }
+
+      const {
+        data: bloqueiosBanco,
+        error: erroBloqueios,
+      } = await supabase
         .from('bloqueios')
         .select('horario')
         .eq('barbeiro_id', barbeiroSelecionado.id)
         .eq('data', dataSelecionada)
+
+      if (erroBloqueios) {
+        console.log('Erro bloqueios:', erroBloqueios)
+      }
 
       const diaInteiroBloqueado = (bloqueiosBanco || []).some(
         (item) => item.horario === null
@@ -335,14 +411,23 @@ function App() {
         servicoSelecionado.duracao_minutos
       )
 
-      const ocupados = (ocupadosBanco || []).map((item) =>
-        item.horario.slice(0, 5)
-      )
+      // Impede choque entre serviços com durações diferentes
+      horarios = horarios.filter((horario) => {
+        return !(ocupadosBanco || []).some((agendamento) => {
+          const duracaoExistente = Number(
+            agendamento.servico?.duracao_minutos || 45
+          )
 
-      horarios = horarios.filter(
-        (horario) => !ocupados.includes(horario)
-      )
+          return horariosSeSobrepoem(
+            horario,
+            Number(servicoSelecionado.duracao_minutos),
+            agendamento.horario,
+            duracaoExistente
+          )
+        })
+      })
 
+      // Bloqueios de horário
       const bloqueados = (bloqueiosBanco || [])
         .filter((item) => item.horario)
         .map((item) => item.horario.slice(0, 5))
@@ -351,13 +436,14 @@ function App() {
         return !bloqueados.some((bloqueado) =>
           horariosSeSobrepoem(
             horario,
-            servicoSelecionado.duracao_minutos,
+            Number(servicoSelecionado.duracao_minutos),
             bloqueado,
             45
           )
         )
       })
 
+      // Não mostrar horários que já passaram hoje
       const agora = new Date()
       const hoje = formatarDataBanco(agora)
 
@@ -381,9 +467,9 @@ function App() {
     dataSelecionada,
   ])
 
-  // =============================
-  // AGENDAR
-  // =============================
+  // =====================================
+  // CRIAR AGENDAMENTO
+  // =====================================
 
   async function confirmarAgendamento() {
     setMensagem('')
@@ -416,13 +502,13 @@ function App() {
     setSalvando(false)
 
     if (error) {
+      console.log(error)
+
       if (error.code === '23505') {
         setMensagem(
           '⚠️ Esse horário acabou de ser ocupado.'
         )
       } else {
-        console.log(error)
-
         setMensagem(
           '❌ Não foi possível realizar o agendamento.'
         )
@@ -444,15 +530,15 @@ function App() {
     setTelefoneCliente('')
   }
 
-  // =============================
+  // =====================================
   // LOGIN
-  // =============================
+  // =====================================
 
   async function fazerLogin() {
     setErroLogin('')
 
     if (!emailLogin.trim() || !senhaLogin) {
-      setErroLogin('Digite seu e-mail e senha.')
+      setErroLogin('Digite seu e-mail e sua senha.')
       return
     }
 
@@ -480,7 +566,7 @@ function App() {
       setEntrando(false)
 
       setErroLogin(
-        'Essa conta não está vinculada a um barbeiro.'
+        'Esta conta não está vinculada a um barbeiro.'
       )
 
       return
@@ -492,9 +578,9 @@ function App() {
     setPagina('painel')
   }
 
-  // =============================
+  // =====================================
   // PERFIL
-  // =============================
+  // =====================================
 
   async function carregarPerfilBarbeiro(userId) {
     const { data, error } = await supabase
@@ -505,7 +591,7 @@ function App() {
       .maybeSingle()
 
     if (error || !data) {
-      console.log(error)
+      console.log('Erro perfil:', error)
       return null
     }
 
@@ -516,9 +602,9 @@ function App() {
     return data
   }
 
-  // =============================
-  // AGENDAMENTOS DO PAINEL
-  // =============================
+  // =====================================
+  // AGENDAMENTOS DO BARBEIRO
+  // =====================================
 
   async function carregarAgendamentos(barbeiroId) {
     setCarregandoAgendamentos(true)
@@ -587,9 +673,7 @@ function App() {
     }
 
     if (novoStatus === 'confirmado') {
-      setMensagemPainel(
-        '✅ Agendamento confirmado!'
-      )
+      setMensagemPainel('✅ Agendamento confirmado!')
     }
 
     if (novoStatus === 'cancelado') {
@@ -608,18 +692,24 @@ function App() {
     return 'Agendado'
   }
 
-  // =============================
-  // SERVIÇOS ADMIN
-  // =============================
+  // =====================================
+  // SERVIÇOS DO BARBEIRO LOGADO
+  // =====================================
 
   async function carregarServicosAdmin() {
+    if (!barbeiroLogado) return
+
     const { data, error } = await supabase
       .from('servicos')
       .select('*')
+      .eq('barbeiro_id', barbeiroLogado.id)
       .order('id')
 
     if (error) {
       console.log(error)
+      setMensagemServicos(
+        '❌ Não foi possível carregar seus serviços.'
+      )
       return
     }
 
@@ -642,6 +732,8 @@ function App() {
 
   async function adicionarServico() {
     setMensagemServicos('')
+
+    if (!barbeiroLogado) return
 
     const preco = Number(
       novoServicoPreco.replace(',', '.')
@@ -666,6 +758,7 @@ function App() {
     const { error } = await supabase
       .from('servicos')
       .insert({
+        barbeiro_id: barbeiroLogado.id,
         nome: novoServicoNome.trim(),
         preco,
         duracao_minutos: duracao,
@@ -687,18 +780,13 @@ function App() {
     setNovoServicoDuracao('45')
 
     setMensagemServicos(
-      '✅ Serviço adicionado!'
+      `✅ Serviço adicionado somente para ${barbeiroLogado.nome}!`
     )
 
     await carregarServicosAdmin()
-    await carregarDadosPublicos()
   }
 
-  function alterarEdicaoServico(
-    id,
-    campo,
-    valor
-  ) {
+  function alterarEdicaoServico(id, campo, valor) {
     setEdicoesServicos((atual) => ({
       ...atual,
 
@@ -711,6 +799,8 @@ function App() {
 
   async function salvarServico(id) {
     setMensagemServicos('')
+
+    if (!barbeiroLogado) return
 
     const edicao = edicoesServicos[id]
 
@@ -744,6 +834,7 @@ function App() {
         duracao_minutos: duracao,
       })
       .eq('id', id)
+      .eq('barbeiro_id', barbeiroLogado.id)
 
     if (error) {
       console.log(error)
@@ -756,20 +847,22 @@ function App() {
     }
 
     setMensagemServicos(
-      '✅ Serviço atualizado!'
+      `✅ Serviço do ${barbeiroLogado.nome} atualizado!`
     )
 
     await carregarServicosAdmin()
-    await carregarDadosPublicos()
   }
 
   async function alternarServico(servico) {
+    if (!barbeiroLogado) return
+
     const { error } = await supabase
       .from('servicos')
       .update({
         ativo: !servico.ativo,
       })
       .eq('id', servico.id)
+      .eq('barbeiro_id', barbeiroLogado.id)
 
     if (error) {
       console.log(error)
@@ -788,12 +881,11 @@ function App() {
     )
 
     await carregarServicosAdmin()
-    await carregarDadosPublicos()
   }
 
-  // =============================
+  // =====================================
   // BLOQUEIOS
-  // =============================
+  // =====================================
 
   async function carregarBloqueios(barbeiroId) {
     const hoje = formatarDataBanco(new Date())
@@ -814,7 +906,7 @@ function App() {
   }
 
   useEffect(() => {
-    async function carregarHorariosBloqueio() {
+    async function carregarHorariosParaBloquear() {
       setHorarioBloqueio('')
 
       if (!barbeiroLogado || !dataBloqueio) {
@@ -870,7 +962,7 @@ function App() {
       setHorariosBloqueio(horarios)
     }
 
-    carregarHorariosBloqueio()
+    carregarHorariosParaBloquear()
   }, [
     dataBloqueio,
     barbeiroLogado,
@@ -1017,7 +1109,7 @@ function App() {
     }
 
     setMensagemBloqueio(
-      '✅ Horário desbloqueado!'
+      '✅ Dia/horário desbloqueado!'
     )
 
     await carregarBloqueios(
@@ -1025,16 +1117,20 @@ function App() {
     )
   }
 
-  // =============================
-  // EMAIL
-  // =============================
+  // =====================================
+  // ALTERAR E-MAIL
+  // =====================================
 
   async function alterarEmail() {
     setMensagemConta('')
 
+    const emailNovo = novoEmail
+      .trim()
+      .toLowerCase()
+
     if (
-      !novoEmail.trim() ||
-      !novoEmail.includes('@')
+      !emailNovo ||
+      !emailNovo.includes('@')
     ) {
       setMensagemConta(
         '⚠️ Digite um e-mail válido.'
@@ -1043,32 +1139,66 @@ function App() {
       return
     }
 
-    const { error } =
+    if (
+      emailNovo ===
+      emailAtual.toLowerCase()
+    ) {
+      setMensagemConta(
+        '⚠️ Esse já é o seu e-mail atual.'
+      )
+
+      return
+    }
+
+    const { data, error } =
       await supabase.auth.updateUser({
-        email: novoEmail.trim(),
+        email: emailNovo,
       })
 
     if (error) {
+      console.log('Erro ao trocar e-mail:', error)
+
       setMensagemConta(
-        `❌ ${error.message}`
+        `❌ Não foi possível alterar: ${error.message}`
+      )
+
+      return
+    }
+
+    setEmailPendente(emailNovo)
+    setNovoEmail('')
+
+    // Se a configuração do projeto permitir troca imediata
+    if (
+      data?.user?.email &&
+      data.user.email.toLowerCase() ===
+        emailNovo
+    ) {
+      setEmailAtual(data.user.email)
+      setEmailPendente('')
+
+      setMensagemConta(
+        '✅ E-mail alterado com sucesso!'
       )
 
       return
     }
 
     setMensagemConta(
-      '✅ Verifique o e-mail para confirmar a alteração.'
+      `📧 Solicitação enviada para ${emailNovo}. Confirme a alteração pelo e-mail.`
     )
-
-    setNovoEmail('')
   }
+
+  // =====================================
+  // ALTERAR SENHA
+  // =====================================
 
   async function alterarSenha() {
     setMensagemConta('')
 
     if (novaSenha.length < 8) {
       setMensagemConta(
-        '⚠️ Use pelo menos 8 caracteres.'
+        '⚠️ Use uma senha com pelo menos 8 caracteres.'
       )
 
       return
@@ -1088,27 +1218,29 @@ function App() {
     }
 
     setMensagemConta(
-      '✅ Senha alterada!'
+      '✅ Senha alterada com sucesso!'
     )
 
     setNovaSenha('')
   }
 
-  // =============================
+  // =====================================
   // SAIR
-  // =============================
+  // =====================================
 
   async function sair() {
     await supabase.auth.signOut()
 
     setBarbeiroLogado(null)
     setAgendamentos([])
+    setEmailLogin('')
+    setSenhaLogin('')
     setPagina('inicio')
   }
 
-  // ===================================================
-  // GERENCIAR SERVIÇOS
-  // ===================================================
+  // =====================================
+  // ADMIN DE SERVIÇOS
+  // =====================================
 
   if (
     pagina === 'servicos-admin' &&
@@ -1119,10 +1251,10 @@ function App() {
         <div className="card card-agendamento">
           <div className="logo">✂️</div>
 
-          <h1>Serviços</h1>
+          <h1>Meus serviços</h1>
 
           <p className="subtitulo">
-            Adicione, edite ou desative serviços
+            Serviços de {barbeiroLogado.nome}
           </p>
 
           <section className="admin-secao">
@@ -1172,106 +1304,114 @@ function App() {
           </section>
 
           <section className="admin-secao">
-            <h2>✂️ Serviços cadastrados</h2>
+            <h2>✂️ Meus serviços</h2>
 
-            <div className="servicos-admin-lista">
-              {servicosAdmin.map((servico) => (
-                <div
-                  className="servico-admin-card"
-                  key={servico.id}
-                >
-                  <div className="status-servico">
-                    {servico.ativo
-                      ? '🟢 Ativo'
-                      : '🔴 Desativado'}
-                  </div>
-
-                  <input
-                    type="text"
-                    value={
-                      edicoesServicos[
-                        servico.id
-                      ]?.nome || ''
-                    }
-                    onChange={(e) =>
-                      alterarEdicaoServico(
-                        servico.id,
-                        'nome',
-                        e.target.value
-                      )
-                    }
-                  />
-
-                  <label>Preço (R$)</label>
-
-                  <input
-                    type="text"
-                    value={
-                      edicoesServicos[
-                        servico.id
-                      ]?.preco || ''
-                    }
-                    onChange={(e) =>
-                      alterarEdicaoServico(
-                        servico.id,
-                        'preco',
-                        e.target.value
-                      )
-                    }
-                  />
-
-                  <label>
-                    Duração em minutos
-                  </label>
-
-                  <input
-                    type="number"
-                    value={
-                      edicoesServicos[
-                        servico.id
-                      ]?.duracao || ''
-                    }
-                    onChange={(e) =>
-                      alterarEdicaoServico(
-                        servico.id,
-                        'duracao',
-                        e.target.value
-                      )
-                    }
-                  />
-
-                  <div className="admin-botoes">
-                    <button
-                      className="botao-salvar"
-                      onClick={() =>
-                        salvarServico(
-                          servico.id
-                        )
-                      }
-                    >
-                      💾 Salvar
-                    </button>
-
-                    <button
-                      className={
-                        servico.ativo
-                          ? 'botao-desativar'
-                          : 'botao-ativar'
-                      }
-                      onClick={() =>
-                        alternarServico(
-                          servico
-                        )
-                      }
-                    >
+            {servicosAdmin.length === 0 ? (
+              <p className="sem-horario">
+                Nenhum serviço cadastrado.
+              </p>
+            ) : (
+              <div className="servicos-admin-lista">
+                {servicosAdmin.map((servico) => (
+                  <div
+                    className="servico-admin-card"
+                    key={servico.id}
+                  >
+                    <div className="status-servico">
                       {servico.ativo
-                        ? '👁️ Desativar'
-                        : '👁️ Ativar'}
-                    </button>
+                        ? '🟢 Ativo'
+                        : '🔴 Desativado'}
+                    </div>
+
+                    <label>Serviço</label>
+
+                    <input
+                      type="text"
+                      value={
+                        edicoesServicos[
+                          servico.id
+                        ]?.nome || ''
+                      }
+                      onChange={(e) =>
+                        alterarEdicaoServico(
+                          servico.id,
+                          'nome',
+                          e.target.value
+                        )
+                      }
+                    />
+
+                    <label>Preço (R$)</label>
+
+                    <input
+                      type="text"
+                      value={
+                        edicoesServicos[
+                          servico.id
+                        ]?.preco || ''
+                      }
+                      onChange={(e) =>
+                        alterarEdicaoServico(
+                          servico.id,
+                          'preco',
+                          e.target.value
+                        )
+                      }
+                    />
+
+                    <label>
+                      Duração em minutos
+                    </label>
+
+                    <input
+                      type="number"
+                      value={
+                        edicoesServicos[
+                          servico.id
+                        ]?.duracao || ''
+                      }
+                      onChange={(e) =>
+                        alterarEdicaoServico(
+                          servico.id,
+                          'duracao',
+                          e.target.value
+                        )
+                      }
+                    />
+
+                    <div className="admin-botoes">
+                      <button
+                        className="botao-salvar"
+                        onClick={() =>
+                          salvarServico(
+                            servico.id
+                          )
+                        }
+                      >
+                        💾 Salvar
+                      </button>
+
+                      <button
+                        className={
+                          servico.ativo
+                            ? 'botao-desativar'
+                            : 'botao-ativar'
+                        }
+                        onClick={() =>
+                          alternarServico(
+                            servico
+                          )
+                        }
+                      >
+                        {servico.ativo
+                          ? '👁️ Desativar'
+                          : '👁️ Ativar'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {mensagemServicos && (
@@ -1293,9 +1433,9 @@ function App() {
     )
   }
 
-  // ===================================================
-  // BLOQUEIOS
-  // ===================================================
+  // =====================================
+  // BLOQUEAR AGENDA
+  // =====================================
 
   if (
     pagina === 'bloqueios-admin' &&
@@ -1395,7 +1535,7 @@ function App() {
           )}
 
           <section className="admin-secao">
-            <h2>🔒 Bloqueios atuais</h2>
+            <h2>🔒 Meus bloqueios</h2>
 
             {bloqueios.length === 0 ? (
               <p className="sem-horario">
@@ -1467,9 +1607,9 @@ function App() {
     )
   }
 
-  // ===================================================
+  // =====================================
   // CONFIGURAÇÕES
-  // ===================================================
+  // =====================================
 
   if (
     pagina === 'configuracoes' &&
@@ -1482,22 +1622,34 @@ function App() {
 
           <h1>Configurações</h1>
 
-          <p>{barbeiroLogado.nome}</p>
+          <p className="subtitulo">
+            {barbeiroLogado.nome}
+          </p>
 
           <div className="config-box">
-            <h3>Alterar e-mail</h3>
+            <h3>📧 Alterar e-mail</h3>
 
             <p>
-              Atual:
+              E-mail atual:
               <br />
               <strong>
                 {emailAtual}
               </strong>
             </p>
 
+            {emailPendente && (
+              <p className="mensagem">
+                ⏳ Aguardando confirmação:
+                <br />
+                <strong>
+                  {emailPendente}
+                </strong>
+              </p>
+            )}
+
             <input
               type="email"
-              placeholder="Novo e-mail"
+              placeholder="Digite o novo e-mail"
               value={novoEmail}
               onChange={(e) =>
                 setNovoEmail(
@@ -1515,7 +1667,7 @@ function App() {
           </div>
 
           <div className="config-box">
-            <h3>Alterar senha</h3>
+            <h3>🔐 Alterar senha</h3>
 
             <input
               type="password"
@@ -1548,16 +1700,16 @@ function App() {
               setPagina('painel')
             }
           >
-            ← Voltar
+            ← Voltar ao painel
           </button>
         </div>
       </div>
     )
   }
 
-  // ===================================================
+  // =====================================
   // PAINEL
-  // ===================================================
+  // =====================================
 
   if (
     pagina === 'painel' &&
@@ -1574,10 +1726,16 @@ function App() {
             Olá, {barbeiroLogado.nome}!
           </h2>
 
+          <p className="subtitulo">
+            {emailAtual}
+          </p>
+
           <div className="painel-menu">
             <button
               className="botao-menu-painel"
               onClick={async () => {
+                setMensagemServicos('')
+
                 await carregarServicosAdmin()
 
                 setPagina(
@@ -1586,12 +1744,16 @@ function App() {
               }}
             >
               ✂️
-              <span>Serviços e preços</span>
+              <span>
+                Meus serviços
+              </span>
             </button>
 
             <button
               className="botao-menu-painel"
               onClick={async () => {
+                setMensagemBloqueio('')
+
                 await carregarBloqueios(
                   barbeiroLogado.id
                 )
@@ -1602,19 +1764,25 @@ function App() {
               }}
             >
               📅
-              <span>Bloquear agenda</span>
+              <span>
+                Bloquear agenda
+              </span>
             </button>
 
             <button
               className="botao-menu-painel"
-              onClick={() =>
+              onClick={() => {
+                setMensagemConta('')
+
                 setPagina(
                   'configuracoes'
                 )
-              }
+              }}
             >
               ⚙️
-              <span>Configurações</span>
+              <span>
+                Configurações
+              </span>
             </button>
 
             <button
@@ -1639,6 +1807,7 @@ function App() {
           <section className="etapa">
             <div className="titulo-etapa">
               <span>📅</span>
+
               <h2>
                 Próximos agendamentos
               </h2>
@@ -1761,9 +1930,9 @@ function App() {
     )
   }
 
-  // ===================================================
+  // =====================================
   // LOGIN
-  // ===================================================
+  // =====================================
 
   if (pagina === 'barbeiro') {
     return (
@@ -1834,9 +2003,9 @@ function App() {
     )
   }
 
-  // ===================================================
+  // =====================================
   // CLIENTE
-  // ===================================================
+  // =====================================
 
   if (pagina === 'cliente') {
     return (
@@ -1857,7 +2026,7 @@ function App() {
               <section className="etapa">
                 <div className="titulo-etapa">
                   <span>1</span>
-                  <h2>Barbeiro</h2>
+                  <h2>Escolha o barbeiro</h2>
                 </div>
 
                 <div className="opcoes-grid">
@@ -1881,9 +2050,17 @@ function App() {
                             null
                           )
 
+                          setServicos([])
+
                           setDataSelecionada(
                             ''
                           )
+
+                          setHorarioSelecionado(
+                            ''
+                          )
+
+                          setMensagem('')
                         }}
                       >
                         💈 {item.nome}
@@ -1897,57 +2074,78 @@ function App() {
                 <section className="etapa">
                   <div className="titulo-etapa">
                     <span>2</span>
-                    <h2>Serviço</h2>
+                    <h2>
+                      Serviços de{' '}
+                      {
+                        barbeiroSelecionado.nome
+                      }
+                    </h2>
                   </div>
 
-                  <div className="servicos-grid">
-                    {servicos.map(
-                      (servico) => (
-                        <button
-                          key={
-                            servico.id
-                          }
-                          className={
-                            servicoSelecionado
-                              ?.id ===
-                            servico.id
-                              ? 'servico selecionado'
-                              : 'servico'
-                          }
-                          onClick={() => {
-                            setServicoSelecionado(
-                              servico
-                            )
-
-                            setDataSelecionada(
-                              ''
-                            )
-                          }}
-                        >
-                          <strong>
-                            ✂️{' '}
-                            {
-                              servico.nome
+                  {carregandoServicos ? (
+                    <p>
+                      Carregando serviços...
+                    </p>
+                  ) : servicos.length === 0 ? (
+                    <p className="sem-horario">
+                      Esse barbeiro não possui
+                      serviços disponíveis.
+                    </p>
+                  ) : (
+                    <div className="servicos-grid">
+                      {servicos.map(
+                        (servico) => (
+                          <button
+                            key={
+                              servico.id
                             }
-                          </strong>
+                            className={
+                              servicoSelecionado
+                                ?.id ===
+                              servico.id
+                                ? 'servico selecionado'
+                                : 'servico'
+                            }
+                            onClick={() => {
+                              setServicoSelecionado(
+                                servico
+                              )
 
-                          <span>
-                            R${' '}
-                            {Number(
-                              servico.preco
-                            ).toFixed(2)}
-                          </span>
+                              setDataSelecionada(
+                                ''
+                              )
 
-                          <small>
-                            {
-                              servico.duracao_minutos
-                            }{' '}
-                            min
-                          </small>
-                        </button>
-                      )
-                    )}
-                  </div>
+                              setHorarioSelecionado(
+                                ''
+                              )
+                            }}
+                          >
+                            <strong>
+                              ✂️{' '}
+                              {
+                                servico.nome
+                              }
+                            </strong>
+
+                            <span>
+                              R${' '}
+                              {Number(
+                                servico.preco
+                              ).toFixed(2)}
+                            </span>
+
+                            <small>
+                              ⏱️{' '}
+                              {
+                                servico.duracao_minutos
+                              }{' '}
+                              min
+                            </small>
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )}
                 </section>
               )}
 
@@ -1955,7 +2153,7 @@ function App() {
                 <section className="etapa">
                   <div className="titulo-etapa">
                     <span>3</span>
-                    <h2>Dia</h2>
+                    <h2>Escolha o dia</h2>
                   </div>
 
                   <div className="calendario">
@@ -2001,14 +2199,13 @@ function App() {
                 <section className="etapa">
                   <div className="titulo-etapa">
                     <span>4</span>
-                    <h2>Horário</h2>
+                    <h2>Escolha o horário</h2>
                   </div>
 
                   {horariosDisponiveis.length ===
                   0 ? (
                     <p className="sem-horario">
-                      Nenhum horário
-                      disponível.
+                      Nenhum horário disponível.
                     </p>
                   ) : (
                     <div className="horarios-grid">
@@ -2073,7 +2270,9 @@ function App() {
                   </div>
 
                   <div className="resumo">
-                    <h3>Resumo</h3>
+                    <h3>
+                      Resumo do agendamento
+                    </h3>
 
                     <p>
                       💈{' '}
@@ -2094,6 +2293,14 @@ function App() {
                       {Number(
                         servicoSelecionado.preco
                       ).toFixed(2)}
+                    </p>
+
+                    <p>
+                      ⏱️{' '}
+                      {
+                        servicoSelecionado.duracao_minutos
+                      }{' '}
+                      minutos
                     </p>
 
                     <p>
@@ -2135,9 +2342,14 @@ function App() {
 
           <button
             className="botao-secundario"
-            onClick={() =>
+            onClick={() => {
               setPagina('inicio')
-            }
+              setBarbeiroSelecionado(null)
+              setServicoSelecionado(null)
+              setServicos([])
+              setDataSelecionada('')
+              setHorarioSelecionado('')
+            }}
           >
             ← Voltar
           </button>
@@ -2146,9 +2358,9 @@ function App() {
     )
   }
 
-  // ===================================================
+  // =====================================
   // INÍCIO
-  // ===================================================
+  // =====================================
 
   return (
     <div className="app">
